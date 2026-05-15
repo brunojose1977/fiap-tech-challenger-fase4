@@ -1,0 +1,136 @@
+name: CI e CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      push_to_ecr:
+        description: "Fazer login na AWS, buildar e enviar a imagem para o ECR"
+        type: boolean
+        default: true
+      run_ecs_task:
+        description: "Depois do push, iniciar uma execução Fargate (gera custo)"
+        type: boolean
+        default: false
+      s3_input_key:
+        description: "Chave S3 do vídeo no bucket de entrada (obrigatório se run_ecs_task)"
+        type: string
+        default: ""
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff
+        run: ruff check src tests
+
+      - name: Pytest
+        run: pytest -q --tb=short
+
+  docker-build:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem (validação)
+        run: docker build -t yolo-violence:ci .
+
+  terraform-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init (sem backend remoto)
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+  publish-ecr:
+    needs: [lint-test, docker-build]
+    if: github.event_name == 'workflow_dispatch' && inputs.push_to_ecr == true
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO_NAME: ${{ secrets.ECR_REPOSITORY_NAME }}
+        run: |
+          test -n "$REPO_NAME" || (echo "Secret ECR_REPOSITORY_NAME ausente." && exit 1)
+          docker build -t "$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG" -t "$ECR_REGISTRY/$REPO_NAME:latest" .
+          docker push "$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/$REPO_NAME:latest"
+
+      - name: RunTask ECS Fargate
+        if: inputs.run_ecs_task == true && inputs.s3_input_key != ''
+        env:
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_NAME }}
+          ECS_TASK_DEFINITION: ${{ secrets.ECS_TASK_DEFINITION_FAMILY }}
+          ECS_CONTAINER_NAME: ${{ secrets.ECS_CONTAINER_NAME }}
+          SUBNET_IDS: ${{ secrets.ECS_SUBNET_IDS }}
+          SECURITY_GROUP_ID: ${{ secrets.ECS_SECURITY_GROUP_ID }}
+          S3_INPUT_KEY: ${{ inputs.s3_input_key }}
+        run: |
+          SUBNETS_JSON=$(echo "$SUBNET_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
+          aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --launch-type FARGATE \
+            --task-definition "$ECS_TASK_DEFINITION" \
+            --network-configuration "$(jq -n \
+              --argjson subnets "$SUBNETS_JSON" \
+              --arg sg "$SECURITY_GROUP_ID" \
+              '{awsvpcConfiguration: {subnets: $subnets, securityGroups: [$sg], assignPublicIp: "ENABLED"}}')" \
+            --overrides "$(jq -n \
+              --arg name "$ECS_CONTAINER_NAME" \
+              --arg key "$S3_INPUT_KEY" \
+              '{containerOverrides: [{name: $name, environment: [{name: "S3_INPUT_KEY", value: $key}]}]}')"

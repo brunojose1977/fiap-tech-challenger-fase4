@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+crash.log
+*.pem
+.env
+.env.*
+# Não versionar arquivos com credenciais de exemplo
+configuração_pastas.txt
+
+# Pasta local sem versionamento
+arquivos-que-nao-devem-ser-versionados/

@@ -1,0 +1,20 @@
+# Copie para terraform.tfvars (não commite segredos).
+aws_region = "us-east-1"
+
+# Conta sem VPC default: mantenha true (padrão). Conta com VPC default e sem querer VPC nova: false
+# create_dedicated_vpc = false
+# vpc_cidr             = "10.20.0.0/16" # só quando create_dedicated_vpc = true
+project_name   = "yolo-violence"
+environment    = "prod"
+bucket_suffix  = "minhaempresa-prod" # vazio = sufixo aleatório
+
+# Chave padrão do objeto de entrada (pode ficar vazio e passar só no RunTask)
+default_s3_input_key = ""
+
+# GitHub Actions com OIDC (opcional)
+# github_oidc_enabled = true
+# github_repository    = "minha-org/meu-repo"
+
+# Recursos Fargate (YOLO + OpenCV: CPU/memória maiores reduzem OOM)
+fargate_cpu    = 4096
+fargate_memory = 8192
