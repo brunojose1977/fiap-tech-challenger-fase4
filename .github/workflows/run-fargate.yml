@@ -1,0 +1,167 @@
+# Dispara apenas manualmente (Actions → "RUN pipeline no Fargate" → Run workflow).
+# Evita o job aparecer como "skipped" no CI de push/PR.
+name: RUN pipeline no Fargate
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_to_ecr:
+        description: "Buildar e enviar imagem :latest para o ECR antes do RunTask"
+        type: boolean
+        default: true
+      s3_input_key:
+        description: "Chave S3 do vídeo no bucket de entrada (vazio = meu_video_04.mp4)"
+        type: string
+        default: ""
+
+concurrency:
+  group: run-fargate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  DEFAULT_S3_INPUT_KEY: meu_video_04.mp4
+
+jobs:
+  push-image:
+    if: inputs.push_to_ecr == true
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configurar credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO_NAME: ${{ secrets.ECR_REPOSITORY_NAME }}
+        run: |
+          test -n "$REPO_NAME" || (echo "Secret ECR_REPOSITORY_NAME ausente." && exit 1)
+          docker build -t "$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG" -t "$ECR_REGISTRY/$REPO_NAME:latest" .
+          docker push "$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/$REPO_NAME:latest"
+
+  run-ecs-fargate:
+    name: RUN — pipeline Python no Fargate
+    needs: [push-image]
+    if: |
+      always() &&
+      (needs.push-image.result == 'success' || needs.push-image.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_NAME }}
+      ECS_TASK_DEFINITION: ${{ secrets.ECS_TASK_DEFINITION_FAMILY }}
+      ECS_CONTAINER_NAME: ${{ secrets.ECS_CONTAINER_NAME }}
+      SUBNET_IDS: ${{ secrets.ECS_SUBNET_IDS }}
+      SECURITY_GROUP_ID: ${{ secrets.ECS_SECURITY_GROUP_ID }}
+      S3_INPUT_KEY: ${{ inputs.s3_input_key != '' && inputs.s3_input_key || env.DEFAULT_S3_INPUT_KEY }}
+    steps:
+      - name: Configurar credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validar secrets do RunTask
+        run: |
+          if [ -z "${S3_INPUT_KEY}" ]; then
+            S3_INPUT_KEY="${DEFAULT_S3_INPUT_KEY}"
+            echo "S3_INPUT_KEY=${S3_INPUT_KEY}" >> "$GITHUB_ENV"
+          fi
+          for name in ECS_CLUSTER ECS_TASK_DEFINITION ECS_CONTAINER_NAME SUBNET_IDS SECURITY_GROUP_ID; do
+            eval "value=\$$name"
+            if [ -z "$value" ]; then
+              echo "Secret ausente para RunTask: $name"
+              exit 1
+            fi
+          done
+          echo "S3_INPUT_KEY=${S3_INPUT_KEY}"
+
+      - name: RunTask ECS Fargate e aguardar conclusão
+        run: |
+          set -euo pipefail
+          SUBNETS_JSON=$(echo "$SUBNET_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
+          NETWORK_CONFIG=$(jq -n \
+            --argjson subnets "$SUBNETS_JSON" \
+            --arg sg "$SECURITY_GROUP_ID" \
+            '{awsvpcConfiguration: {subnets: $subnets, securityGroups: [$sg], assignPublicIp: "ENABLED"}}')
+          OVERRIDES=$(jq -n \
+            --arg name "$ECS_CONTAINER_NAME" \
+            --arg key "$S3_INPUT_KEY" \
+            '{containerOverrides: [{name: $name, environment: [{name: "S3_INPUT_KEY", value: $key}]}]}')
+
+          RUN_JSON=$(aws ecs run-task \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --launch-type FARGATE \
+            --task-definition "$ECS_TASK_DEFINITION" \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "$OVERRIDES" \
+            --output json)
+
+          TASK_ARN=$(echo "$RUN_JSON" | jq -r '.tasks[0].taskArn // empty')
+          if [ -z "$TASK_ARN" ]; then
+            echo "RunTask não retornou taskArn:"
+            echo "$RUN_JSON" | jq .
+            exit 1
+          fi
+          echo "Task ARN: $TASK_ARN"
+
+          echo "Aguardando conclusão da tarefa..."
+          while true; do
+            sleep 15
+            TASK_STATUS=$(aws ecs describe-tasks \
+              --region "$AWS_REGION" \
+              --cluster "$ECS_CLUSTER" \
+              --tasks "$TASK_ARN" \
+              --query "tasks[0].lastStatus" \
+              --output text)
+            EXIT_CODE=$(aws ecs describe-tasks \
+              --region "$AWS_REGION" \
+              --cluster "$ECS_CLUSTER" \
+              --tasks "$TASK_ARN" \
+              --query "tasks[0].containers[0].exitCode" \
+              --output text)
+            STOP_REASON=$(aws ecs describe-tasks \
+              --region "$AWS_REGION" \
+              --cluster "$ECS_CLUSTER" \
+              --tasks "$TASK_ARN" \
+              --query "tasks[0].stoppedReason" \
+              --output text)
+
+            echo "Status: ${TASK_STATUS}  ExitCode: ${EXIT_CODE}"
+
+            case "$TASK_STATUS" in
+              RUNNING|PENDING|PROVISIONING)
+                continue
+                ;;
+              STOPPED)
+                if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "None" ] && [ -n "$EXIT_CODE" ]; then
+                  echo "Tarefa finalizou com erro. ExitCode=${EXIT_CODE} Motivo=${STOP_REASON}"
+                  exit 1
+                fi
+                echo "Pipeline concluído com sucesso."
+                exit 0
+                ;;
+              *)
+                echo "Status inesperado: ${TASK_STATUS}"
+                exit 1
+                ;;
+            esac
+          done
