@@ -70,7 +70,7 @@ jobs:
       ECS_CONTAINER_NAME: ${{ secrets.ECS_CONTAINER_NAME }}
       SUBNET_IDS: ${{ secrets.ECS_SUBNET_IDS }}
       SECURITY_GROUP_ID: ${{ secrets.ECS_SECURITY_GROUP_ID }}
-      S3_INPUT_KEY: ${{ inputs.s3_input_key != '' && inputs.s3_input_key || env.DEFAULT_S3_INPUT_KEY }}
+      S3_INPUT_KEY: ${{ inputs.s3_input_key || 'meu_video_04.mp4' }}
     steps:
       - name: Configurar credenciais AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
