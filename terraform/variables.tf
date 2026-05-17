@@ -64,24 +64,13 @@ variable "github_oidc_enabled" {
   default     = false
 }
 
-#variable "github_repository" {
-#  type        = string
-#  description = "Repositório GitHub no formato org/repo (obrigatório se github_oidc_enabled)."
-#  default     = ""
-
-#  validation {
-#    condition     = !var.github_oidc_enabled || var.github_repository != ""
-#    error_message = "Defina github_repository (formato org/repo) quando github_oidc_enabled for true."
-#  }
-
 variable "github_repository" {
   type        = string
   description = "Repositório GitHub no formato org/repo (obrigatório se github_oidc_enabled)."
   default     = ""
 
   validation {
-    condition     = var.github_repository != ""  # ✅ Valid
-    error_message = "Repository name is required."
+    condition     = !var.github_oidc_enabled || var.github_repository != ""
+    error_message = "Defina github_repository (formato org/repo) quando github_oidc_enabled for true."
   }
- 
 }
