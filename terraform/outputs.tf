@@ -43,6 +43,11 @@ output "default_subnet_ids" {
   description = "Subnets para networkConfiguration do RunTask (públicas na VPC dedicada, ou subnets da VPC default)."
 }
 
+output "ecs_subnet_ids_csv" {
+  value       = join(",", local.public_subnet_ids)
+  description = "IDs das subnets separados por vírgula (valor do secret GitHub ECS_SUBNET_IDS)."
+}
+
 output "ecs_task_security_group_id" {
   value       = aws_security_group.task.id
   description = "Security group da tarefa (para networkConfiguration do RunTask)."

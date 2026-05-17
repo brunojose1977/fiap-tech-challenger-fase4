@@ -133,7 +133,9 @@ Isso cria o provedor OIDC (se ainda não existir na conta) e uma role para o Act
 
 - `AWS_ROLE_ARN` — role assumível via OIDC com permissão de ECR + ECS.
 - `ECR_REPOSITORY_NAME` — nome do repositório (não a URL completa), igual ao resource Terraform.
-- Para `RunTask`: `ECS_CLUSTER_NAME`, `ECS_TASK_DEFINITION_FAMILY`, `ECS_CONTAINER_NAME` (output `ecs_task_container_name`), `ECS_SUBNET_IDS` (lista separada por vírgulas), `ECS_SECURITY_GROUP_ID`.
+- Para `RunTask`: `ECS_CLUSTER_NAME`, `ECS_TASK_DEFINITION_FAMILY`, `ECS_CONTAINER_NAME` (output `ecs_task_container_name`), `ECS_SUBNET_IDS` (use `terraform output -raw ecs_subnet_ids_csv`), `ECS_SECURITY_GROUP_ID` (`terraform output -raw ecs_task_security_group_id`).
+
+> Se a tarefa ficar em **PENDING**, quase sempre é rede: subnets sem rota para Internet (IGW) ou `ECS_SUBNET_IDS` / `ECS_SECURITY_GROUP_ID` desatualizados após `terraform apply`. Rode `terraform output -raw ecs_subnet_ids_csv` e atualize o secret no GitHub.
 
 ---
 

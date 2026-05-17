@@ -15,6 +15,25 @@ data "aws_subnets" "default" {
   }
 }
 
+# Na VPC default, filtra apenas subnets com rota 0.0.0.0/0 -> IGW (necessário para Fargate puxar imagem do ECR).
+data "aws_route_table" "default_subnet" {
+  for_each  = var.create_dedicated_vpc ? toset([]) : toset(data.aws_subnets.default[0].ids)
+  subnet_id = each.value
+}
+
+locals {
+  default_public_subnet_ids = [
+    for sid in(var.create_dedicated_vpc ? [] : data.aws_subnets.default[0].ids) : sid
+    if try(
+      anytrue([
+        for route in data.aws_route_table.default_subnet[sid].routes :
+        route.cidr_block == "0.0.0.0/0" && startswith(route.gateway_id, "igw-")
+      ]),
+      false,
+    )
+  ]
+}
+
 resource "aws_vpc" "project" {
   count                = var.create_dedicated_vpc ? 1 : 0
   cidr_block           = var.vpc_cidr

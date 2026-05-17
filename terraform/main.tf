@@ -14,5 +14,5 @@ locals {
   cloudwatch_log_prefix = "/ecs/${local.name_prefix}"
 
   vpc_id            = var.create_dedicated_vpc ? aws_vpc.project[0].id : data.aws_vpc.default[0].id
-  public_subnet_ids = var.create_dedicated_vpc ? aws_subnet.public[*].id : data.aws_subnets.default[0].ids
+  public_subnet_ids = var.create_dedicated_vpc ? aws_subnet.public[*].id : local.default_public_subnet_ids
 }

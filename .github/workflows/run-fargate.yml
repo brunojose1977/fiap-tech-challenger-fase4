@@ -93,10 +93,48 @@ jobs:
           done
           echo "S3_INPUT_KEY=${S3_INPUT_KEY}"
 
-      - name: RunTask ECS Fargate e aguardar conclusão
+      - name: Validar rede (subnets, SG e rota para Internet)
         run: |
           set -euo pipefail
-          SUBNETS_JSON=$(echo "$SUBNET_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')
+          SUBNET_LIST=$(echo "$SUBNET_IDS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d')
+          SG_VPC=$(aws ec2 describe-security-groups \
+            --region "$AWS_REGION" \
+            --group-ids "$SECURITY_GROUP_ID" \
+            --query "SecurityGroups[0].VpcId" \
+            --output text)
+
+          echo "Security group VPC: ${SG_VPC}"
+          while IFS= read -r subnet; do
+            [ -n "$subnet" ] || continue
+            SUBNET_VPC=$(aws ec2 describe-subnets \
+              --region "$AWS_REGION" \
+              --subnet-ids "$subnet" \
+              --query "Subnets[0].VpcId" \
+              --output text)
+            if [ "$SUBNET_VPC" != "$SG_VPC" ]; then
+              echo "Subnet ${subnet} (VPC ${SUBNET_VPC}) não pertence à VPC do security group (${SG_VPC})."
+              echo "Atualize o secret ECS_SUBNET_IDS com: terraform output -raw ecs_subnet_ids_csv"
+              exit 1
+            fi
+            IGW_ROUTE=$(aws ec2 describe-route-tables \
+              --region "$AWS_REGION" \
+              --filters "Name=association.subnet-id,Values=${subnet}" \
+              --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].GatewayId | [0]" \
+              --output text)
+            if [ -z "$IGW_ROUTE" ] || [ "$IGW_ROUTE" = "None" ] || [[ "$IGW_ROUTE" != igw-* ]]; then
+              echo "Subnet ${subnet} não tem rota 0.0.0.0/0 para Internet Gateway (necessário para Fargate baixar imagem do ECR)."
+              exit 1
+            fi
+            echo "Subnet OK: ${subnet} (VPC ${SUBNET_VPC}, IGW ${IGW_ROUTE})"
+          done <<< "$SUBNET_LIST"
+
+      - name: RunTask ECS Fargate e aguardar conclusão
+        env:
+          PENDING_TIMEOUT_SEC: 1200
+          STUCK_STATUS_SEC: 600
+        run: |
+          set -euo pipefail
+          SUBNETS_JSON=$(echo "$SUBNET_IDS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           NETWORK_CONFIG=$(jq -n \
             --argjson subnets "$SUBNETS_JSON" \
             --arg sg "$SECURITY_GROUP_ID" \
@@ -115,6 +153,12 @@ jobs:
             --overrides "$OVERRIDES" \
             --output json)
 
+          if [ "$(echo "$RUN_JSON" | jq '.failures | length')" -gt 0 ]; then
+            echo "RunTask retornou falhas:"
+            echo "$RUN_JSON" | jq '.failures'
+            exit 1
+          fi
+
           TASK_ARN=$(echo "$RUN_JSON" | jq -r '.tasks[0].taskArn // empty')
           if [ -z "$TASK_ARN" ]; then
             echo "RunTask não retornou taskArn:"
@@ -123,32 +167,58 @@ jobs:
           fi
           echo "Task ARN: $TASK_ARN"
 
-          echo "Aguardando conclusão da tarefa..."
+          START_TS=$(date +%s)
+          LAST_STATUS=""
+          STATUS_SINCE=$START_TS
+
+          echo "Aguardando conclusão da tarefa (timeout em PENDING/PROVISIONING: ${PENDING_TIMEOUT_SEC}s)..."
           while true; do
             sleep 15
-            TASK_STATUS=$(aws ecs describe-tasks \
+            TASK_JSON=$(aws ecs describe-tasks \
               --region "$AWS_REGION" \
               --cluster "$ECS_CLUSTER" \
               --tasks "$TASK_ARN" \
-              --query "tasks[0].lastStatus" \
-              --output text)
-            EXIT_CODE=$(aws ecs describe-tasks \
-              --region "$AWS_REGION" \
-              --cluster "$ECS_CLUSTER" \
-              --tasks "$TASK_ARN" \
-              --query "tasks[0].containers[0].exitCode" \
-              --output text)
-            STOP_REASON=$(aws ecs describe-tasks \
-              --region "$AWS_REGION" \
-              --cluster "$ECS_CLUSTER" \
-              --tasks "$TASK_ARN" \
-              --query "tasks[0].stoppedReason" \
-              --output text)
+              --output json)
 
-            echo "Status: ${TASK_STATUS}  ExitCode: ${EXIT_CODE}"
+            if [ "$(echo "$TASK_JSON" | jq '.tasks | length')" -eq 0 ]; then
+              echo "Tarefa não encontrada no cluster ${ECS_CLUSTER}. Verifique ECS_CLUSTER_NAME e a região ${AWS_REGION}."
+              exit 1
+            fi
+
+            TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].lastStatus')
+            DESIRED_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].desiredStatus')
+            EXIT_CODE=$(echo "$TASK_JSON" | jq -r '.tasks[0].containers[0].exitCode // "None"')
+            STOP_REASON=$(echo "$TASK_JSON" | jq -r '.tasks[0].stoppedReason // empty')
+            STOP_CODE=$(echo "$TASK_JSON" | jq -r '.tasks[0].stopCode // empty')
+            CONTAINER_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].containers[0].lastStatus // empty')
+            CONTAINER_REASON=$(echo "$TASK_JSON" | jq -r '.tasks[0].containers[0].reason // empty')
+
+            echo "Status: ${TASK_STATUS} (desired: ${DESIRED_STATUS})  Container: ${CONTAINER_STATUS}  ExitCode: ${EXIT_CODE}"
+            [ -n "$CONTAINER_REASON" ] && [ "$CONTAINER_REASON" != "null" ] && echo "Container reason: ${CONTAINER_REASON}"
+            [ -n "$STOP_REASON" ] && [ "$STOP_REASON" != "null" ] && echo "Stopped reason: ${STOP_REASON}"
+            [ -n "$STOP_CODE" ] && [ "$STOP_CODE" != "null" ] && echo "Stop code: ${STOP_CODE}"
+
+            NOW_TS=$(date +%s)
+            if [ "$TASK_STATUS" != "$LAST_STATUS" ]; then
+              LAST_STATUS=$TASK_STATUS
+              STATUS_SINCE=$NOW_TS
+            fi
 
             case "$TASK_STATUS" in
-              RUNNING|PENDING|PROVISIONING)
+              RUNNING)
+                continue
+                ;;
+              PENDING|PROVISIONING)
+                ELAPSED=$((NOW_TS - START_TS))
+                STUCK=$((NOW_TS - STATUS_SINCE))
+                if [ "$ELAPSED" -ge "$PENDING_TIMEOUT_SEC" ] || [ "$STUCK" -ge "$STUCK_STATUS_SEC" ]; then
+                  echo "Timeout: tarefa presa em ${TASK_STATUS}."
+                  echo "Atualize os secrets com os outputs do Terraform (principalmente ECS_SUBNET_IDS):"
+                  echo "  terraform output -raw ecs_subnet_ids_csv"
+                  echo "  terraform output -raw ecs_task_security_group_id"
+                  echo "$TASK_JSON" | jq '.tasks[0] | {lastStatus, desiredStatus, stoppedReason, stopCode, containers, attachments}'
+                  exit 1
+                fi
                 continue
                 ;;
               STOPPED)
@@ -161,6 +231,7 @@ jobs:
                 ;;
               *)
                 echo "Status inesperado: ${TASK_STATUS}"
+                echo "$TASK_JSON" | jq '.tasks[0]'
                 exit 1
                 ;;
             esac

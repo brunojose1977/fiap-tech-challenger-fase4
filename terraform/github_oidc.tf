@@ -89,6 +89,16 @@ data "aws_iam_policy_document" "github_deploy" {
       aws_iam_role.ecs_task.arn,
     ]
   }
+
+  statement {
+    sid = "Ec2NetworkRead"
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeRouteTables",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_deploy" {
