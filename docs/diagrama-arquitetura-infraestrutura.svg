@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Diagrama editável: abra no Inkscape, Figma ou VS Code e ajuste posições/cores -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 920" font-family="Segoe UI, system-ui, sans-serif" font-size="12">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#374151"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 11px; fill: #6b7280; }
+      .box { fill: #ffffff; stroke-width: 1.5; }
+      .label { font-size: 11px; font-weight: 600; fill: #111827; }
+      .detail { font-size: 10px; fill: #4b5563; }
+      .edge-label { font-size: 9px; fill: #374151; }
+      .aws-zone { fill: #fff7ed; stroke: #f97316; stroke-width: 2; stroke-dasharray: 8 4; }
+      .gha-zone { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 1.5; }
+      .ext-zone { fill: #f9fafb; stroke: #9ca3af; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <text x="640" y="32" text-anchor="middle" class="title">YOLOv8 Pose Violence Pipeline  Arquitetura de Infraestrutura</text>
+  <text x="640" y="50" text-anchor="middle" class="subtitle">Visão geral/física · região us-east-1 · fonte: docs/diagrama-arquitetura-infraestrutura.svg</text>
+
+  <!-- Fora da AWS -->
+  <rect x="24" y="72" width="300" height="200" rx="8" class="ext-zone"/>
+  <text x="40" y="94" class="label">Fora da AWS</text>
+  <rect x="40" y="108" width="128" height="72" rx="6" class="box" stroke="#6b7280"/>
+  <text x="52" y="128" class="label">Desenvolvedor</text>
+  <text x="52" y="144" class="detail">Terraform CLI</text>
+  <text x="52" y="158" class="detail">AWS CLI · Docker</text>
+  <rect x="180" y="108" width="128" height="72" rx="6" class="box" stroke="#6b7280"/>
+  <text x="192" y="128" class="label">GitHub Repo</text>
+  <text x="192" y="144" class="detail">Python 3.11 · tests/</text>
+  <text x="192" y="158" class="detail">Dockerfile · terraform/</text>
+  <rect x="40" y="192" width="268" height="64" rx="6" class="box" stroke="#6b7280"/>
+  <text x="52" y="212" class="label">Stack do container</text>
+  <text x="52" y="228" class="detail">Ultralytics YOLOv8n-pose · OpenCV · boto3 · 12-factor env</text>
+
+  <!-- GitHub Actions -->
+  <rect x="24" y="292" width="300" height="148" rx="8" class="gha-zone"/>
+  <text x="40" y="314" class="label">GitHub Actions</text>
+  <rect x="40" y="326" width="268" height="44" rx="6" class="box" stroke="#7c3aed"/>
+  <text x="52" y="346" class="label">ci-cd.yml</text>
+  <text x="52" y="360" class="detail">Ruff · Pytest · docker build · terraform validate · push ECR</text>
+  <rect x="40" y="378" width="268" height="48" rx="6" class="box" stroke="#7c3aed"/>
+  <text x="52" y="398" class="label">run-fargate.yml</text>
+  <text x="52" y="412" class="detail">OIDC ’ ECR push · ECS RunTask · validação de rede</text>
+
+  <!-- AWS Cloud -->
+  <rect x="352" y="72" width="904" height="816" rx="10" class="aws-zone"/>
+  <text x="368" y="96" class="label" fill="#c2410c">AWS Cloud (us-east-1)</text>
+
+  <!-- IAM -->
+  <rect x="372" y="112" width="260" height="168" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="388" y="132" class="label">IAM</text>
+  <rect x="388" y="142" width="228" height="28" rx="4" class="box" stroke="#d97706"/>
+  <text x="400" y="160" class="detail">OIDC · token.actions.githubusercontent.com</text>
+  <rect x="388" y="176" width="228" height="28" rx="4" class="box" stroke="#d97706"/>
+  <text x="400" y="194" class="detail">Role GitHub Actions · ECR + ECS</text>
+  <rect x="388" y="210" width="108" height="28" rx="4" class="box" stroke="#d97706"/>
+  <text x="396" y="228" class="detail">ECS Execution</text>
+  <rect x="508" y="210" width="108" height="28" rx="4" class="box" stroke="#d97706"/>
+  <text x="516" y="228" class="detail">ECS Task · S3</text>
+
+  <!-- Rede -->
+  <rect x="652" y="112" width="280" height="168" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="668" y="132" class="label">Rede VPC</text>
+  <rect x="668" y="142" width="120" height="36" rx="4" class="box" stroke="#2563eb"/>
+  <text x="676" y="164" class="detail">VPC + IGW</text>
+  <rect x="800" y="142" width="116" height="36" rx="4" class="box" stroke="#2563eb"/>
+  <text x="808" y="158" class="detail">Subnets públicas</text>
+  <text x="808" y="172" class="detail">2 AZ · 0.0.0.0/0’IGW</text>
+  <rect x="668" y="188" width="248" height="36" rx="4" class="box" stroke="#2563eb"/>
+  <text x="676" y="210" class="detail">Security Group task · egress ’ Internet/S3/ECR</text>
+  <rect x="668" y="232" width="248" height="36" rx="4" class="box" stroke="#2563eb"/>
+  <text x="676" y="254" class="detail">Terraform Apply · provisiona VPC/S3/ECR/ECS/IAM</text>
+
+  <!-- S3 -->
+  <rect x="372" y="300" width="560" height="120" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="388" y="320" class="label">Amazon S3</text>
+  <rect x="388" y="332" width="160" height="72" rx="4" class="box" stroke="#059669"/>
+  <text x="400" y="352" class="label">Entrada</text>
+  <text x="400" y="368" class="detail">S3_INPUT_BUCKET</text>
+  <text x="400" y="384" class="detail">GetObject · versionamento</text>
+  <rect x="564" y="332" width="160" height="72" rx="4" class="box" stroke="#059669"/>
+  <text x="576" y="352" class="label">Predict</text>
+  <text x="576" y="368" class="detail">S3_PREDICT_BUCKET</text>
+  <text x="576" y="384" class="detail">PutObject · vídeo YOLO</text>
+  <rect x="740" y="332" width="176" height="72" rx="4" class="box" stroke="#059669"/>
+  <text x="752" y="352" class="label">Saída</text>
+  <text x="752" y="368" class="detail">S3_OUTPUT_BUCKET</text>
+  <text x="752" y="384" class="detail">PutObject · vídeo anotado</text>
+
+  <!-- ECR + ECS -->
+  <rect x="372" y="440" width="400" height="200" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="388" y="460" class="label">Amazon ECR</text>
+  <rect x="388" y="472" width="168" height="56" rx="4" class="box" stroke="#ea580c"/>
+  <text x="400" y="492" class="detail">yolo-violence-app</text>
+  <text x="400" y="508" class="detail">Imagem Docker · scan on push</text>
+  <text x="388" y="548" class="label">Amazon ECS Fargate</text>
+  <rect x="388" y="556" width="112" height="40" rx="4" class="box" stroke="#ea580c"/>
+  <text x="396" y="580" class="detail">Cluster</text>
+  <rect x="508" y="556" width="112" height="40" rx="4" class="box" stroke="#ea580c"/>
+  <text x="516" y="580" class="detail">Task Def awsvpc</text>
+  <rect x="628" y="472" width="128" height="124" rx="4" class="box" stroke="#ea580c"/>
+  <text x="640" y="492" class="label">Task yolo-violence</text>
+  <text x="640" y="508" class="detail">RunTask pontual</text>
+  <text x="640" y="524" class="detail">CPU Fargate</text>
+  <text x="640" y="540" class="detail">pull ECR · IAM role</text>
+  <text x="640" y="576" class="detail">process pipeline</text>
+
+  <!-- CloudWatch -->
+  <rect x="792" y="440" width="200" height="80" rx="6" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+  <text x="808" y="460" class="label">CloudWatch Logs</text>
+  <text x="808" y="478" class="detail">/ecs/yolo-violence</text>
+  <text x="808" y="494" class="detail">retenção 14 dias</text>
+
+  <!-- Legenda fluxos -->
+  <rect x="372" y="660" width="864" height="200" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="388" y="684" class="label">Fluxos principais</text>
+  <text x="388" y="708" class="detail">1. Desenvolvedor ’ terraform apply ’ provisiona S3, ECR, ECS, IAM, VPC/SG</text>
+  <text x="388" y="728" class="detail">2. Desenvolvedor ’ upload vídeo ’ bucket entrada</text>
+  <text x="388" y="748" class="detail">3. GitHub Actions (OIDC) ’ docker push ’ ECR</text>
+  <text x="388" y="768" class="detail">4. run-fargate.yml ’ RunTask ’ Fargate puxa imagem do ECR</text>
+  <text x="388" y="788" class="detail">5. Container ’ GetObject entrada ’ YOLO predict ’ PutObject predict + saída ’ CloudWatch</text>
+  <text x="388" y="808" class="detail">6. ci-cd.yml valida código (Ruff, Pytest, docker build, terraform validate) em push/PR</text>
+
+  <!-- Setas -->
+  <line x1="168" y1="180" x2="456" y2="360" stroke="#374151" marker-end="url(#arrow)"/>
+  <text x="280" y="268" class="edge-label">upload vídeo</text>
+  <line x1="174" y1="292" x2="500" y2="190" stroke="#7c3aed" marker-end="url(#arrow)"/>
+  <text x="300" y="248" class="edge-label">OIDC AssumeRole</text>
+  <line x1="308" y1="350" x2="388" y2="500" stroke="#7c3aed" marker-end="url(#arrow)"/>
+  <text x="318" y="430" class="edge-label">docker push</text>
+  <line x1="308" y1="400" x2="640" y2="472" stroke="#7c3aed" marker-end="url(#arrow)"/>
+  <text x="460" y="430" class="edge-label">RunTask</text>
+  <line x1="556" y1="500" x2="628" y2="520" stroke="#ea580c" marker-end="url(#arrow)"/>
+  <text x="580" y="512" class="edge-label">pull</text>
+  <line x1="548" y1="360" x2="680" y2="472" stroke="#059669" marker-end="url(#arrow)"/>
+  <text x="600" y="410" class="edge-label">GetObject</text>
+  <line x1="756" y1="532" x2="644" y2="404" stroke="#059669" marker-end="url(#arrow)"/>
+  <text x="700" y="470" class="edge-label">PutObject</text>
+  <line x1="756" y1="532" x2="880" y2="480" stroke="#4b5563" marker-end="url(#arrow)"/>
+  <text x="820" y="500" class="edge-label">logs</text>
+</svg>

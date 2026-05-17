@@ -1,0 +1,79 @@
+%% Diagrama de Arquitetura de Infraestrutura — YOLOv8 Pose + AWS
+%% Fonte editável: edite este arquivo e visualize em https://mermaid.live
+%% O README.md embute a mesma definição; mantenha os dois sincronizados ao alterar.
+
+flowchart TB
+  subgraph external["Fora da AWS"]
+    DEV["Desenvolvedor\nTerraform CLI · AWS CLI · Docker"]
+    REPO["GitHub Repository\nsrc/ · Dockerfile · terraform/ · tests/"]
+  end
+
+  subgraph gha["GitHub Actions"]
+    WF_CI["ci-cd.yml\nRuff · Pytest · docker build\nterraform fmt · validate · push ECR"]
+    WF_RUN["run-fargate.yml\nBuild/push ECR · ECS RunTask\naguarda conclusão da task"]
+  end
+
+  REPO --> WF_CI
+  REPO --> WF_RUN
+
+  subgraph aws["AWS Cloud — us-east-1"]
+    TF["Terraform Apply\nprovisiona recursos"]
+
+    subgraph iam["IAM"]
+      OIDC["OIDC Provider\ntoken.actions.githubusercontent.com"]
+      ROLE_GH["Role GitHub Actions\nECR push · ECS RunTask"]
+      ROLE_EXEC["Role ECS Execution\npull imagem · logs"]
+      ROLE_TASK["Role ECS Task\nS3 Get/Put nos 3 buckets"]
+    end
+
+    subgraph net["Rede — VPC"]
+      VPC["VPC default ou dedicada"]
+      IGW["Internet Gateway"]
+      SUB["Subnets públicas\nrota 0.0.0.0/0 → IGW"]
+      SG["Security Group task\negress liberado"]
+      VPC --> IGW
+      VPC --> SUB
+    end
+
+    subgraph storage["Amazon S3 — SSE AES256 · versionamento"]
+      B_IN["Bucket entrada\nS3_INPUT_BUCKET"]
+      B_PRED["Bucket predict\nS3_PREDICT_BUCKET"]
+      B_OUT["Bucket saída\nS3_OUTPUT_BUCKET"]
+    end
+
+    ECR["Amazon ECR\nyolo-violence-app · scan on push"]
+
+    subgraph ecs_block["Amazon ECS Fargate"]
+      CLUSTER["ECS Cluster\nContainer Insights"]
+      TD["Task Definition\nawsvpc · CPU Fargate"]
+      TASK["Container yolo-violence\nPython 3.11 · Ultralytics YOLOv8n-pose\nOpenCV · boto3"]
+      CLUSTER --> TD --> TASK
+    end
+
+    CW["CloudWatch Logs\n/ecs/yolo-violence · 14 dias"]
+  end
+
+  DEV -->|"upload vídeo"| B_IN
+  DEV --> TF
+  TF --> storage
+  TF --> ECR
+  TF --> ecs_block
+  TF --> iam
+  TF --> net
+
+  WF_CI -.->|"push em master / dispatch"| ECR
+  WF_RUN --> OIDC
+  OIDC --> ROLE_GH
+  ROLE_GH -->|"docker push"| ECR
+  ROLE_GH -->|"RunTask + DescribeTasks"| CLUSTER
+
+  ECR -->|"pull image"| TASK
+  ROLE_EXEC --> TASK
+  ROLE_TASK --> TASK
+  SUB --> TASK
+  SG --> TASK
+
+  TASK -->|"awslogs"| CW
+  TASK -->|"GetObject"| B_IN
+  TASK -->|"PutObject"| B_PRED
+  TASK -->|"PutObject"| B_OUT

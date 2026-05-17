@@ -25,6 +25,7 @@ A aplicação segue o padrão **12-factor**: toda configuração vem de **variá
 | `src/yolo_violence_pipeline/` | Código de produção (`config`, `s3_io`, `violence`, `pipeline`, `cli`) |
 | `tests/` | Testes unitários (rápidos, sem baixar pesos YOLO) |
 | `terraform/` | IaC: buckets S3, ECR, IAM, ECS Fargate (VPC padrão) |
+| `docs/` | Diagramas de arquitetura editáveis (Mermaid `.mmd`, SVG) |
 | `Dockerfile` | Imagem de runtime com Python 3.11 e dependências de vídeo |
 | `.github/workflows/ci-cd.yml` | CI (testes, Ruff, build Docker, Terraform validate) e CD manual |
 | `scripts/run_local.ps1` / `run_local.sh` | Execução local com `.env` (instala `[dev,runtime]`) |
@@ -141,41 +142,95 @@ Isso cria o provedor OIDC (se ainda não existir na conta) e uma role para o Act
 
 ## Diagrama da infraestrutura
 
+Fontes **editáveis** (mantenha sincronizadas ao alterar o desenho):
+
+| Formato | Arquivo | Como editar |
+|--------|---------|-------------|
+| **Mermaid** | [`docs/diagrama-arquitetura-infraestrutura.mmd`](docs/diagrama-arquitetura-infraestrutura.mmd) | VS Code + extensão Mermaid, ou [mermaid.live](https://mermaid.live) |
+| **SVG** | [`docs/diagrama-arquitetura-infraestrutura.svg`](docs/diagrama-arquitetura-infraestrutura.svg) | Inkscape, Figma, Illustrator ou editor de XML |
+
+Visualização estática (SVG):
+
+![Diagrama de arquitetura de infraestrutura](docs/diagrama-arquitetura-infraestrutura.svg)
+
+Diagrama interativo no GitHub (Mermaid — mesma definição do `.mmd`):
+
 ```mermaid
 flowchart TB
-  subgraph aws["AWS Cloud"]
-    subgraph s3["Amazon S3"]
-      B1["Bucket entrada\n(S3_INPUT_BUCKET)"]
-      B2["Bucket predict\n(S3_PREDICT_BUCKET)"]
-      B3["Bucket saída\n(S3_OUTPUT_BUCKET)"]
-    end
-    subgraph ecr["Amazon ECR"]
-      IMG["Imagem Docker\nyolo-violence"]
-    end
-    subgraph ecs["Amazon ECS Fargate"]
-      TASK["Task pontual\nyolo-violence process"]
-    end
-    CW["CloudWatch Logs"]
-    IAM["IAM Roles\ntask + execução"]
-    GH["GitHub Actions\n(OIDC)"]
+  subgraph external["Fora da AWS"]
+    DEV["Desenvolvedor\nTerraform CLI · AWS CLI · Docker"]
+    REPO["GitHub Repository\nsrc/ · Dockerfile · terraform/ · tests/"]
   end
-  DEV["Desenvolvedor\nTerraform / CLI"]
-  DEV --> B1
-  DEV --> terraform["Terraform Apply"]
-  terraform --> B1
-  terraform --> B2
-  terraform --> B3
-  terraform --> ecr
-  terraform --> ecs
-  terraform --> IAM
-  GH -->|"docker push"| IMG
-  GH -->|"RunTask"| TASK
-  IMG --> TASK
-  IAM --> TASK
-  TASK --> CW
-  TASK -->|"GetObject"| B1
-  TASK -->|"PutObject"| B2
-  TASK -->|"PutObject"| B3
+
+  subgraph gha["GitHub Actions"]
+    WF_CI["ci-cd.yml\nRuff · Pytest · docker build\nterraform fmt · validate · push ECR"]
+    WF_RUN["run-fargate.yml\nBuild/push ECR · ECS RunTask\naguarda conclusão da task"]
+  end
+
+  REPO --> WF_CI
+  REPO --> WF_RUN
+
+  subgraph aws["AWS Cloud — us-east-1"]
+    TF["Terraform Apply\nprovisiona recursos"]
+
+    subgraph iam["IAM"]
+      OIDC["OIDC Provider\ntoken.actions.githubusercontent.com"]
+      ROLE_GH["Role GitHub Actions\nECR push · ECS RunTask"]
+      ROLE_EXEC["Role ECS Execution\npull imagem · logs"]
+      ROLE_TASK["Role ECS Task\nS3 Get/Put nos 3 buckets"]
+    end
+
+    subgraph net["Rede — VPC"]
+      VPC["VPC default ou dedicada"]
+      IGW["Internet Gateway"]
+      SUB["Subnets públicas\nrota 0.0.0.0/0 → IGW"]
+      SG["Security Group task\negress liberado"]
+      VPC --> IGW
+      VPC --> SUB
+    end
+
+    subgraph storage["Amazon S3 — SSE AES256 · versionamento"]
+      B_IN["Bucket entrada\nS3_INPUT_BUCKET"]
+      B_PRED["Bucket predict\nS3_PREDICT_BUCKET"]
+      B_OUT["Bucket saída\nS3_OUTPUT_BUCKET"]
+    end
+
+    ECR["Amazon ECR\nyolo-violence-app · scan on push"]
+
+    subgraph ecs_block["Amazon ECS Fargate"]
+      CLUSTER["ECS Cluster\nContainer Insights"]
+      TD["Task Definition\nawsvpc · CPU Fargate"]
+      TASK["Container yolo-violence\nPython 3.11 · Ultralytics YOLOv8n-pose\nOpenCV · boto3"]
+      CLUSTER --> TD --> TASK
+    end
+
+    CW["CloudWatch Logs\n/ecs/yolo-violence · 14 dias"]
+  end
+
+  DEV -->|"upload vídeo"| B_IN
+  DEV --> TF
+  TF --> storage
+  TF --> ECR
+  TF --> ecs_block
+  TF --> iam
+  TF --> net
+
+  WF_CI -.->|"push em master / dispatch"| ECR
+  WF_RUN --> OIDC
+  OIDC --> ROLE_GH
+  ROLE_GH -->|"docker push"| ECR
+  ROLE_GH -->|"RunTask + DescribeTasks"| CLUSTER
+
+  ECR -->|"pull image"| TASK
+  ROLE_EXEC --> TASK
+  ROLE_TASK --> TASK
+  SUB --> TASK
+  SG --> TASK
+
+  TASK -->|"awslogs"| CW
+  TASK -->|"GetObject"| B_IN
+  TASK -->|"PutObject"| B_PRED
+  TASK -->|"PutObject"| B_OUT
 ```
 
 Fluxo de **dados**: vídeo sobe para o bucket de entrada → a tarefa Fargate baixa, processa, grava o intermediário no bucket de predict e o vídeo anotado no bucket de saída.
