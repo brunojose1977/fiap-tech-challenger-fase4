@@ -10,7 +10,7 @@ default_s3_input_key = ""
 # GitHub Actions com OIDC (opcional)
 github_oidc_enabled = true
 # Formato org/repo (sem https://) — exigido pelo claim `sub` do OIDC do GitHub
-github_repository    = "brunojose1977/fiap-tech-challenger-fase4"
+github_repository = "brunojose1977/fiap-tech-challenger-fase4"
 
 # Recursos Fargate (YOLO + OpenCV: CPU/memória maiores reduzem OOM)
 fargate_cpu    = 4096
