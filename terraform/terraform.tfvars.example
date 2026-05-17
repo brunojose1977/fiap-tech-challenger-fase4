@@ -13,7 +13,7 @@ default_s3_input_key = ""
 
 # GitHub Actions com OIDC (opcional)
 # github_oidc_enabled = true
-# github_repository    = "minha-org/meu-repo"
+# github_repository = "minha-org/meu-repo"
 
 # Recursos Fargate (YOLO + OpenCV: CPU/memória maiores reduzem OOM)
 fargate_cpu    = 4096

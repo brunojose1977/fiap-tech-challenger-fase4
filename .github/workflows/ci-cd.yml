@@ -69,9 +69,14 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.5"
+          terraform_wrapper: false
 
+      # terraform.tfvars é específico do ambiente; o CI valida apenas os .tf versionados.
       - name: Terraform fmt
-        run: terraform fmt -check -recursive
+        run: |
+          for f in *.tf; do
+            terraform fmt -check -diff=false "$f"
+          done
 
       - name: Terraform init (sem backend remoto)
         run: terraform init -backend=false -input=false

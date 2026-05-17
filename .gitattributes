@@ -1,0 +1,4 @@
+# Garante LF no repositório (CI roda em Linux).
+*.tf text eol=lf
+*.tfvars text eol=lf
+*.tfvars.example text eol=lf
