@@ -66,11 +66,11 @@ variable "github_oidc_enabled" {
 
 variable "github_repository" {
   type        = string
-  description = "Repositório GitHub no formato org/repo (obrigatório se github_oidc_enabled)."
+  description = "GitHub repository in format owner/repo"
   default     = ""
 
   validation {
-    condition     = !var.github_oidc_enabled || var.github_repository != ""
-    error_message = "Defina github_repository (formato org/repo) quando github_oidc_enabled for true."
+    condition     = var.github_repository == "" || can(regex("^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$", var.github_repository))
+    error_message = "Repository must be in format: owner/repo"
   }
 }
