@@ -20,6 +20,10 @@ runtime = [
   "opencv-python-headless>=4.8.0",
   "ultralytics>=8.1.0",
 ]
+transcribe = [
+  "openai>=1.40.0",
+  "reportlab>=4.1.0",
+]
 dev = [
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",

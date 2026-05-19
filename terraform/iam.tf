@@ -61,10 +61,54 @@ data "aws_iam_policy_document" "task_s3" {
       "${aws_s3_bucket.output.arn}/*",
     ]
   }
+
+  statement {
+    sid = "TranscribeInputRead"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      aws_s3_bucket.transcribe_input.arn,
+      "${aws_s3_bucket.transcribe_input.arn}/*",
+    ]
+  }
+
+  statement {
+    sid = "TranscribeOutputWrite"
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      aws_s3_bucket.transcribe_output.arn,
+      "${aws_s3_bucket.transcribe_output.arn}/*",
+    ]
+  }
+}
+
+data "aws_iam_policy_document" "task_transcribe" {
+  statement {
+    sid = "TranscribeJobs"
+    actions = [
+      "transcribe:StartTranscriptionJob",
+      "transcribe:GetTranscriptionJob",
+      "transcribe:ListTranscriptionJobs",
+      "transcribe:DeleteTranscriptionJob",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "ecs_task_s3" {
   name   = "s3-pipeline"
   role   = aws_iam_role.ecs_task.id
   policy = data.aws_iam_policy_document.task_s3.json
+}
+
+resource "aws_iam_role_policy" "ecs_task_transcribe" {
+  name   = "amazon-transcribe"
+  role   = aws_iam_role.ecs_task.id
+  policy = data.aws_iam_policy_document.task_transcribe.json
 }

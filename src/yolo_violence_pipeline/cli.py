@@ -9,16 +9,21 @@ import sys
 
 from yolo_violence_pipeline.config import PipelineConfig
 from yolo_violence_pipeline.pipeline import run_pipeline
+from yolo_violence_pipeline.transcribe_config import TranscribePipelineConfig
+from yolo_violence_pipeline.transcribe_pipeline import run_transcribe_pipeline
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Processa vídeo do S3 com YOLOv8 pose e envia resultados aos buckets."
+        description="Pipeline YOLOv8 pose e fluxo Amazon Transcribe + análise de risco."
     )
     parser.add_argument(
         "command",
-        choices=["process"],
-        help="process: executa o pipeline completo",
+        choices=["process", "transcribe-analyze"],
+        help=(
+            "process: YOLOv8 + S3; "
+            "transcribe-analyze: aws-transcribe-audio-from-video-conversations"
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -36,6 +41,14 @@ def main(argv: list[str] | None = None) -> int:
         cfg = PipelineConfig.from_environ()
         result = run_pipeline(cfg)
         print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "transcribe-analyze":
+        cfg = TranscribePipelineConfig.from_environ()
+        result = run_transcribe_pipeline(cfg)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        if result.get("errors"):
+            return 1
         return 0
 
     return 1

@@ -1,6 +1,8 @@
-# Pipeline YOLOv8 Pose + S3 (produção)
+# Pipeline YOLOv8 Pose + Amazon Transcribe + ChatGPT (produção)
 
-Este repositório extrai a lógica do notebook Colab `yolov8_pose_colab_v3_detecção_da_violencia_integração_AWS_S3_1_2.ipynb` para um **pacote Python** executável em container, com **infraestrutura como código (Terraform)** na AWS (S3, ECR, ECS Fargate) e **CI/CD** no GitHub Actions.
+Este repositório extrai a lógica do notebook Colab `yolov8_pose_colab_v3_detecção_da_violencia_integração_AWS_S3_1_2.ipynb` para um **pacote Python** executável em container, com **infraestrutura como código (Terraform)** na AWS (S3, ECR, ECS Fargate, **Amazon Transcribe**) e **CI/CD** no GitHub Actions.
+
+Inclui o fluxo **`aws-transcribe-audio-from-video-conversations`**: transcrição de vídeos/áudios no S3, análise de risco com **ChatGPT (OpenAI)** e geração de relatórios em PDF.
 
 > **Segurança:** se você já versionou credenciais AWS em arquivos locais (por exemplo `configuração_pastas.txt`), **revogue essas chaves no IAM** e use apenas perfis locais (`aws configure`), variáveis de ambiente em CI ou **IAM roles** (ECS task role / OIDC no GitHub). O arquivo `configuração_pastas.txt` está no `.gitignore` deste projeto.
 
@@ -16,6 +18,18 @@ Este repositório extrai a lógica do notebook Colab `yolov8_pose_colab_v3_detec
 
 A aplicação segue o padrão **12-factor**: toda configuração vem de **variáveis de ambiente** (não há segredos no código).
 
+### Pipeline `aws-transcribe-audio-from-video-conversations`
+
+1. **Entrada:** lista todos os vídeos/áudios em `TRANSCRIBE_S3_INPUT_BUCKET` (padrão: `transcribe-violence-input-fiap-posttech-iadevs-tcfase04`).
+2. **Amazon Transcribe:** extrai o texto de cada arquivo (idioma padrão `pt-BR`).
+3. **Arquivo TXT:** grava `transcribed-text-<nome-original>.txt` em `TRANSCRIBE_S3_OUTPUT_BUCKET` (padrão: `transcribe-violence-output-fiap-posttech-iadevs-tcfase0`).
+4. **ChatGPT:** modelo `OPENAI_MODEL` (padrão `gpt-5.4`) classifica risco (segurança, integridade, ameaça, crime, risco à mulher).
+5. **PDF:** grava `ChatGPT-5.4-avaliacao-conteudo-<nome-original>.pdf` no mesmo bucket de saída.
+
+Comando CLI: `yolo-violence transcribe-analyze`
+
+Roteiro de configuração manual: [`docs/ROTEIRO-CONFIGURACAO-MANUAL-TRANSCRIBE.md`](docs/ROTEIRO-CONFIGURACAO-MANUAL-TRANSCRIBE.md)
+
 ---
 
 ## Estrutura do repositório
@@ -28,6 +42,7 @@ A aplicação segue o padrão **12-factor**: toda configuração vem de **variá
 | `docs/` | Diagramas de arquitetura editáveis (Mermaid `.mmd`, SVG) |
 | `Dockerfile` | Imagem de runtime com Python 3.11 e dependências de vídeo |
 | `.github/workflows/ci-cd.yml` | CI (testes, Ruff, build Docker, Terraform validate) e CD manual |
+| `.github/workflows/aws-transcribe-audio-from-video-conversations.yml` | Transcribe + ChatGPT no runner GitHub |
 | `scripts/run_local.ps1` / `run_local.sh` | Execução local com `.env` (instala `[dev,runtime]`) |
 | `scripts/docker_run.sh` | Build da imagem e `docker run --env-file .env` |
 
@@ -132,9 +147,27 @@ Isso cria o provedor OIDC (se ainda não existir na conta) e uma role para o Act
 
 ### Secrets recomendados (CD manual)
 
-- `AWS_ROLE_ARN` — role assumível via OIDC com permissão de ECR + ECS.
-- `ECR_REPOSITORY_NAME` — nome do repositório (não a URL completa), igual ao resource Terraform.
-- Para `RunTask`: `ECS_CLUSTER_NAME`, `ECS_TASK_DEFINITION_FAMILY`, `ECS_CONTAINER_NAME` (output `ecs_task_container_name`), `ECS_SUBNET_IDS` (use `terraform output -raw ecs_subnet_ids_csv`), `ECS_SECURITY_GROUP_ID` (`terraform output -raw ecs_task_security_group_id`).
+| Secret | Uso | Valor / origem |
+|--------|-----|----------------|
+| `AWS_ROLE_ARN` | OIDC — ECR, ECS, S3 Transcribe, API Transcribe | Output `terraform output -raw github_actions_role_arn` |
+| `ECR_REPOSITORY_NAME` | Push da imagem Docker | Nome do repositório ECR (ex.: `yolo-violence-prod-app`) |
+| `ECS_CLUSTER_NAME` | RunTask YOLO | Output `ecs_cluster_name` |
+| `ECS_TASK_DEFINITION_FAMILY` | RunTask YOLO | Output `ecs_task_definition_family` |
+| `ECS_CONTAINER_NAME` | RunTask YOLO | Output `ecs_task_container_name` |
+| `ECS_SUBNET_IDS` | Rede Fargate | `terraform output -raw ecs_subnet_ids_csv` |
+| `ECS_SECURITY_GROUP_ID` | Rede Fargate | `terraform output -raw ecs_task_security_group_id` |
+| **`OPENAI_API_KEY`** | **ChatGPT (fluxo Transcribe)** | Chave `sk-...` em [platform.openai.com/api-keys](https://platform.openai.com/api-keys) — **nunca** commitar |
+
+**Amazon Transcribe** não exige secret próprio no GitHub: a autenticação é feita pela role AWS (`AWS_ROLE_ARN`) com permissões `transcribe:*` e S3 nos buckets de entrada/saída (provisionados no Terraform).
+
+Variáveis de ambiente do workflow Transcribe (já definidas no YAML; altere se seus buckets forem outros):
+
+| Variável | Valor padrão no workflow |
+|----------|---------------------------|
+| `TRANSCRIBE_S3_INPUT_BUCKET` | `transcribe-violence-input-fiap-posttech-iadevs-tcfase04` |
+| `TRANSCRIBE_S3_OUTPUT_BUCKET` | `transcribe-violence-output-fiap-posttech-iadevs-tcfase0` |
+| `OPENAI_MODEL` | `gpt-5.4` |
+| `TRANSCRIBE_LANGUAGE_CODE` | `pt-BR` |
 
 > Se a tarefa ficar em **PENDING**, quase sempre é rede: subnets sem rota para Internet (IGW) ou `ECS_SUBNET_IDS` / `ECS_SECURITY_GROUP_ID` desatualizados após `terraform apply`. Rode `terraform output -raw ecs_subnet_ids_csv` e atualize o secret no GitHub.
 
@@ -142,98 +175,47 @@ Isso cria o provedor OIDC (se ainda não existir na conta) e uma role para o Act
 
 ## Diagrama da infraestrutura
 
-Fontes **editáveis** (mantenha sincronizadas ao alterar o desenho):
+### Versão 2 (YOLO + Transcribe + ChatGPT)
+
+| Formato | Arquivo |
+|--------|---------|
+| **PNG** | [`docs/Diagrama de Arquitetura de Infraestrutura-v2.png`](docs/Diagrama%20de%20Arquitetura%20de%20Infraestrutura-v2.png) |
+| **Mermaid V2** | [`docs/diagrama-arquitetura-infraestrutura-v2.mmd`](docs/diagrama-arquitetura-infraestrutura-v2.mmd) |
+| **Documento V2** | [`docs/Documento de Arquitetura V2.docx`](docs/Documento%20de%20Arquitetura%20V2.docx) · [`docs/Documento de Arquitetura V2.pdf`](docs/Documento%20de%20Arquitetura%20V2.pdf) |
+
+![Diagrama de arquitetura V2](docs/Diagrama%20de%20Arquitetura%20de%20Infraestrutura-v2.png)
+
+### Versão 1 (somente YOLO)
 
 | Formato | Arquivo | Como editar |
 |--------|---------|-------------|
 | **Mermaid** | [`docs/diagrama-arquitetura-infraestrutura.mmd`](docs/diagrama-arquitetura-infraestrutura.mmd) | VS Code + extensão Mermaid, ou [mermaid.live](https://mermaid.live) |
 | **SVG** | [`docs/diagrama-arquitetura-infraestrutura.svg`](docs/diagrama-arquitetura-infraestrutura.svg) | Inkscape, Figma, Illustrator ou editor de XML |
 
-Visualização estática (SVG):
-
-![Diagrama de arquitetura de infraestrutura](docs/diagrama-arquitetura-infraestrutura.svg)
+![Diagrama de arquitetura V1](docs/diagrama-arquitetura-infraestrutura.svg)
 
 Diagrama interativo no GitHub (Mermaid — mesma definição do `.mmd`):
 
+Diagrama Mermaid V2 (mesma definição do arquivo `.mmd`):
+
 ```mermaid
 flowchart TB
-  subgraph external["Fora da AWS"]
-    DEV["Desenvolvedor\nTerraform CLI · AWS CLI · Docker"]
-    REPO["GitHub Repository\nsrc/ · Dockerfile · terraform/ · tests/"]
-  end
-
   subgraph gha["GitHub Actions"]
-    WF_CI["ci-cd.yml\nRuff · Pytest · docker build\nterraform fmt · validate · push ECR"]
-    WF_RUN["run-fargate.yml\nBuild/push ECR · ECS RunTask\naguarda conclusão da task"]
+    WF_TX["aws-transcribe-audio-from-video-conversations"]
   end
-
-  REPO --> WF_CI
-  REPO --> WF_RUN
-
-  subgraph aws["AWS Cloud — us-east-1"]
-    TF["Terraform Apply\nprovisiona recursos"]
-
-    subgraph iam["IAM"]
-      OIDC["OIDC Provider\ntoken.actions.githubusercontent.com"]
-      ROLE_GH["Role GitHub Actions\nECR push · ECS RunTask"]
-      ROLE_EXEC["Role ECS Execution\npull imagem · logs"]
-      ROLE_TASK["Role ECS Task\nS3 Get/Put nos 3 buckets"]
-    end
-
-    subgraph net["Rede — VPC"]
-      VPC["VPC default ou dedicada"]
-      IGW["Internet Gateway"]
-      SUB["Subnets públicas\nrota 0.0.0.0/0 → IGW"]
-      SG["Security Group task\negress liberado"]
-      VPC --> IGW
-      VPC --> SUB
-    end
-
-    subgraph storage["Amazon S3 — SSE AES256 · versionamento"]
-      B_IN["Bucket entrada\nS3_INPUT_BUCKET"]
-      B_PRED["Bucket predict\nS3_PREDICT_BUCKET"]
-      B_OUT["Bucket saída\nS3_OUTPUT_BUCKET"]
-    end
-
-    ECR["Amazon ECR\nyolo-violence-app · scan on push"]
-
-    subgraph ecs_block["Amazon ECS Fargate"]
-      CLUSTER["ECS Cluster\nContainer Insights"]
-      TD["Task Definition\nawsvpc · CPU Fargate"]
-      TASK["Container yolo-violence\nPython 3.11 · Ultralytics YOLOv8n-pose\nOpenCV · boto3"]
-      CLUSTER --> TD --> TASK
-    end
-
-    CW["CloudWatch Logs\n/ecs/yolo-violence · 14 dias"]
+  subgraph aws["AWS"]
+    B_TX_IN["S3 entrada Transcribe"]
+    TRANSCRIBE["Amazon Transcribe"]
+    B_TX_OUT["S3 saída: transcribed-text-*.txt\nChatGPT-5.4-avaliacao-*.pdf"]
   end
-
-  DEV -->|"upload vídeo"| B_IN
-  DEV --> TF
-  TF --> storage
-  TF --> ECR
-  TF --> ecs_block
-  TF --> iam
-  TF --> net
-
-  WF_CI -.->|"push em master / dispatch"| ECR
-  WF_RUN --> OIDC
-  OIDC --> ROLE_GH
-  ROLE_GH -->|"docker push"| ECR
-  ROLE_GH -->|"RunTask + DescribeTasks"| CLUSTER
-
-  ECR -->|"pull image"| TASK
-  ROLE_EXEC --> TASK
-  ROLE_TASK --> TASK
-  SUB --> TASK
-  SG --> TASK
-
-  TASK -->|"awslogs"| CW
-  TASK -->|"GetObject"| B_IN
-  TASK -->|"PutObject"| B_PRED
-  TASK -->|"PutObject"| B_OUT
+  GPT["OpenAI ChatGPT gpt-5.4"]
+  WF_TX --> B_TX_IN
+  WF_TX --> TRANSCRIBE --> B_TX_OUT
+  WF_TX --> GPT --> B_TX_OUT
 ```
 
-Fluxo de **dados**: vídeo sobe para o bucket de entrada → a tarefa Fargate baixa, processa, grava o intermediário no bucket de predict e o vídeo anotado no bucket de saída.
+Fluxo **YOLO**: vídeo no bucket de entrada → Fargate → predict + saída.  
+Fluxo **Transcribe**: mídias no bucket Transcribe entrada → Transcribe + ChatGPT → TXT e PDF no bucket de saída.
 
 ---
 
@@ -251,9 +233,14 @@ pip install -e ".[dev]"
 python -m pytest
 python -m ruff check src tests
 
-# CLI (com variáveis de ambiente definidas)
+# CLI YOLO (com variáveis de ambiente definidas)
 pip install -e ".[dev,runtime]"
 yolo-violence process --log-level INFO
+
+# CLI Transcribe + ChatGPT
+pip install -e ".[dev,transcribe]"
+# Defina AWS_REGION, TRANSCRIBE_S3_INPUT_BUCKET, TRANSCRIBE_S3_OUTPUT_BUCKET, OPENAI_API_KEY
+yolo-violence transcribe-analyze --log-level INFO
 ```
 
 ---
