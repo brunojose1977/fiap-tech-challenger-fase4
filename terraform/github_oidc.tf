@@ -99,6 +99,32 @@ data "aws_iam_policy_document" "github_deploy" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid = "TranscribePipelineS3"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket",
+      "s3:HeadObject",
+    ]
+    resources = [
+      aws_s3_bucket.transcribe_input.arn,
+      "${aws_s3_bucket.transcribe_input.arn}/*",
+      aws_s3_bucket.transcribe_output.arn,
+      "${aws_s3_bucket.transcribe_output.arn}/*",
+    ]
+  }
+
+  statement {
+    sid = "TranscribeJobs"
+    actions = [
+      "transcribe:StartTranscriptionJob",
+      "transcribe:GetTranscriptionJob",
+      "transcribe:ListTranscriptionJobs",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_deploy" {

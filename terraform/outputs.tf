@@ -13,6 +13,16 @@ output "s3_output_bucket" {
   description = "Bucket com vídeo anotado (violência placeholder)."
 }
 
+output "s3_transcribe_input_bucket" {
+  value       = aws_s3_bucket.transcribe_input.bucket
+  description = "Bucket de entrada do fluxo Amazon Transcribe."
+}
+
+output "s3_transcribe_output_bucket" {
+  value       = aws_s3_bucket.transcribe_output.bucket
+  description = "Bucket de saída do fluxo Amazon Transcribe."
+}
+
 output "ecr_repository_url" {
   value       = aws_ecr_repository.app.repository_url
   description = "URL do repositório ECR para docker push."
@@ -56,4 +66,14 @@ output "ecs_task_security_group_id" {
 output "github_actions_role_arn" {
   value       = try(aws_iam_role.github_actions[0].arn, null)
   description = "ARN da role OIDC para GitHub Actions (se habilitada)."
+}
+
+output "ecs_transcribe_task_definition_family" {
+  value       = aws_ecs_task_definition.transcribe.family
+  description = "Family da task definition do fluxo Transcribe + ChatGPT."
+}
+
+output "ecs_transcribe_container_name" {
+  value       = "transcribe-analyze"
+  description = "Nome do container Transcribe na task ECS."
 }

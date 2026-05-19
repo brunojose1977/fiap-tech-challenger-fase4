@@ -4,9 +4,12 @@ aws_region = "us-east-1"
 # Conta sem VPC default: mantenha true (padrão). Conta com VPC default e sem querer VPC nova: false
 # create_dedicated_vpc = false
 # vpc_cidr             = "10.20.0.0/16" # só quando create_dedicated_vpc = true
-project_name   = "yolo-violence"
-environment    = "prod"
-bucket_suffix  = "minhaempresa-prod" # vazio = sufixo aleatório
+project_name            = "yolo-violence"
+transcribe_project_name           = "transcribe-violence"
+transcribe_input_bucket_suffix    = "fiap-posttech-iadevs-tcfase04"
+transcribe_output_bucket_suffix   = "fiap-posttech-iadevs-tcfase0"
+environment                       = "prod"
+bucket_suffix                     = "minhaempresa-prod" # vazio = sufixo aleatório (apenas buckets YOLO)
 
 # Chave padrão do objeto de entrada (pode ficar vazio e passar só no RunTask)
 default_s3_input_key = ""

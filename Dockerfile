@@ -19,7 +19,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --upgrade pip && pip install ".[runtime]"
+RUN pip install --upgrade pip && pip install ".[runtime,transcribe]"
 
 # Em ECS, credenciais vêm do task role (sem chaves no disco)
 CMD ["yolo-violence", "process"]

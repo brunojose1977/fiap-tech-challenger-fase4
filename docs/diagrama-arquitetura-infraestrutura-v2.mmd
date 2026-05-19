@@ -1,0 +1,84 @@
+%% Diagrama de Arquitetura de Infraestrutura V2 — YOLOv8 + Amazon Transcribe + ChatGPT
+%% Fonte editável: visualize em https://mermaid.live
+
+flowchart TB
+  subgraph external["Fora da AWS"]
+    DEV["Desenvolvedor\nTerraform · AWS CLI · Docker"]
+    REPO["GitHub Repository\nsrc/ · terraform/ · workflows/"]
+  end
+
+  subgraph gha["GitHub Actions"]
+    WF_CI["ci-cd.yml\nRuff · Pytest · Docker · Terraform"]
+    WF_YOLO["run-fargate.yml\nYOLOv8 no ECS Fargate"]
+    WF_TX["aws-transcribe-audio-from-video-conversations.yml\nTranscribe + ChatGPT"]
+  end
+
+  REPO --> WF_CI
+  REPO --> WF_YOLO
+  REPO --> WF_TX
+
+  subgraph aws["AWS Cloud — us-east-1"]
+    TF["Terraform Apply"]
+
+    subgraph iam["IAM"]
+      OIDC["OIDC GitHub Actions"]
+      ROLE_GH["Role GitHub\nECR · ECS · S3 Transcribe · Transcribe API"]
+      ROLE_EXEC["ECS Execution Role"]
+      ROLE_TASK["ECS Task Role\nS3 YOLO + S3 Transcribe + transcribe:*"]
+    end
+
+    subgraph net["Rede"]
+      VPC["VPC"]
+      SUB["Subnets públicas"]
+      SG["Security Group\negress 0.0.0.0/0"]
+    end
+
+    subgraph storage_yolo["S3 — pipeline YOLO"]
+      B_IN["Bucket entrada YOLO"]
+      B_PRED["Bucket predict"]
+      B_OUT["Bucket saída YOLO"]
+    end
+
+    subgraph storage_tx["S3 — pipeline Transcribe"]
+      B_TX_IN["transcribe-violence-input-…tcfase04\nvídeos e áudios"]
+      B_TX_OUT["transcribe-violence-output-…tcfase0\ntranscribed-text-*.txt\nChatGPT-5.4-avaliacao-*.pdf"]
+    end
+
+    TRANSCRIBE["Amazon Transcribe\nStartTranscriptionJob"]
+    ECR["Amazon ECR"]
+    subgraph ecs["ECS Fargate"]
+      TASK_YOLO["Container yolo-violence\nYOLOv8n-pose · OpenCV"]
+      TASK_TX["Container transcribe-analyze\nboto3 · openai · reportlab"]
+    end
+    CW["CloudWatch Logs"]
+  end
+
+  subgraph openai["OpenAI"]
+    GPT["ChatGPT gpt-5.4\nclassificação de risco"]
+  end
+
+  DEV -->|"upload mídia"| B_TX_IN
+  DEV --> TF
+  TF --> storage_tx
+  TF --> TRANSCRIBE
+  TF --> iam
+
+  WF_TX --> OIDC --> ROLE_GH
+  ROLE_GH --> B_TX_IN
+  ROLE_GH --> TRANSCRIBE
+  ROLE_GH --> B_TX_OUT
+  WF_TX -->|"OPENAI_API_KEY secret"| GPT
+  GPT --> WF_TX
+  WF_TX -->|"PutObject PDF/TXT"| B_TX_OUT
+
+  WF_YOLO --> ECR --> TASK_YOLO
+  TASK_YOLO --> B_IN
+  TASK_YOLO --> B_PRED
+  TASK_YOLO --> B_OUT
+
+  TRANSCRIBE -->|"leitura mídia"| B_TX_IN
+  TRANSCRIBE -->|"JSON bruto"| B_TX_OUT
+
+  ECR --> TASK_TX
+  TASK_TX -.->|"opcional Fargate"| B_TX_IN
+  TASK_TX -.-> GPT

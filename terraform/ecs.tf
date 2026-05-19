@@ -59,7 +59,45 @@ resource "aws_ecs_task_definition" "app" {
         { name = "S3_INPUT_KEY", value = var.default_s3_input_key },
         { name = "WORK_DIR", value = "/app/work" },
         { name = "MODEL_NAME", value = "yolov8n-pose.pt" },
+        { name = "TRANSCRIBE_S3_INPUT_BUCKET", value = aws_s3_bucket.transcribe_input.bucket },
+        { name = "TRANSCRIBE_S3_OUTPUT_BUCKET", value = aws_s3_bucket.transcribe_output.bucket },
       ]
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "transcribe" {
+  family                   = "${local.name_prefix}-transcribe-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 1024
+  memory                   = 2048
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "transcribe-analyze"
+      image     = local.ecr_image
+      essential = true
+      command   = ["yolo-violence", "transcribe-analyze"]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "transcribe"
+        }
+      }
+      environment = [
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "TRANSCRIBE_S3_INPUT_BUCKET", value = aws_s3_bucket.transcribe_input.bucket },
+        { name = "TRANSCRIBE_S3_OUTPUT_BUCKET", value = aws_s3_bucket.transcribe_output.bucket },
+        { name = "WORK_DIR", value = "/app/work" },
+        { name = "OPENAI_MODEL", value = "gpt-5.4" },
+        { name = "TRANSCRIBE_LANGUAGE_CODE", value = "pt-BR" },
+      ]
+      secrets = []
     }
   ])
 }

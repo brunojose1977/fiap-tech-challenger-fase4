@@ -22,6 +22,24 @@ variable "project_name" {
   default     = "yolo-violence"
 }
 
+variable "transcribe_project_name" {
+  type        = string
+  description = "Prefixo dos buckets S3 do fluxo Amazon Transcribe (entrada/saída)."
+  default     = "transcribe-violence"
+}
+
+variable "transcribe_input_bucket_suffix" {
+  type        = string
+  description = "Sufixo do bucket de entrada Transcribe (ex.: fiap-posttech-iadevs-tcfase04)."
+  default     = "fiap-posttech-iadevs-tcfase04"
+}
+
+variable "transcribe_output_bucket_suffix" {
+  type        = string
+  description = "Sufixo do bucket de saída Transcribe (ex.: fiap-posttech-iadevs-tcfase0)."
+  default     = "fiap-posttech-iadevs-tcfase0"
+}
+
 variable "environment" {
   type        = string
   description = "Ambiente (dev, staging, prod)."
