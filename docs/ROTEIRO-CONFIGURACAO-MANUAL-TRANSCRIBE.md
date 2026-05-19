@@ -76,7 +76,7 @@ $env:TRANSCRIBE_S3_INPUT_BUCKET="transcribe-violence-input-fiap-posttech-iadevs-
 $env:TRANSCRIBE_S3_OUTPUT_BUCKET="transcribe-violence-output-fiap-posttech-iadevs-tcfase0"
 $env:OPENAI_API_KEY="sk-..."
 pip install -e ".[dev,transcribe]"
-yolo-violence transcribe-analyze --log-level INFO
+yolo-transcribe --log-level INFO
 ```
 
 ## 8. ECS Fargate (opcional)

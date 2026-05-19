@@ -61,4 +61,4 @@ jobs:
           SKIP_EXISTING_OUTPUTS: ${{ inputs.skip_existing }}
           WORK_DIR: /tmp/transcribe-work
         run: |
-          yolo-violence transcribe-analyze --log-level INFO
+          yolo-transcribe --log-level INFO

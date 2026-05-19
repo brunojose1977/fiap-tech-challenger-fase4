@@ -34,6 +34,7 @@ dev = [
 
 [project.scripts]
 yolo-violence = "yolo_violence_pipeline.cli:main"
+yolo-transcribe = "yolo_violence_pipeline.transcribe_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -80,7 +80,7 @@ resource "aws_ecs_task_definition" "transcribe" {
       name      = "transcribe-analyze"
       image     = local.ecr_image
       essential = true
-      command   = ["yolo-violence", "transcribe-analyze"]
+      command   = ["yolo-transcribe"]
       logConfiguration = {
         logDriver = "awslogs"
         options = {

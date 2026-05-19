@@ -26,7 +26,7 @@ A aplicação segue o padrão **12-factor**: toda configuração vem de **variá
 4. **ChatGPT:** modelo `OPENAI_MODEL` (padrão `gpt-5.4`) classifica risco (segurança, integridade, ameaça, crime, risco à mulher).
 5. **PDF:** grava `ChatGPT-5.4-avaliacao-conteudo-<nome-original>.pdf` no mesmo bucket de saída.
 
-Comando CLI: `yolo-violence transcribe-analyze`
+Comando CLI: `yolo-transcribe` (ou `yolo-violence transcribe-analyze`)
 
 Roteiro de configuração manual: [`docs/ROTEIRO-CONFIGURACAO-MANUAL-TRANSCRIBE.md`](docs/ROTEIRO-CONFIGURACAO-MANUAL-TRANSCRIBE.md)
 
@@ -240,7 +240,7 @@ yolo-violence process --log-level INFO
 # CLI Transcribe + ChatGPT
 pip install -e ".[dev,transcribe]"
 # Defina AWS_REGION, TRANSCRIBE_S3_INPUT_BUCKET, TRANSCRIBE_S3_OUTPUT_BUCKET, OPENAI_API_KEY
-yolo-violence transcribe-analyze --log-level INFO
+yolo-transcribe --log-level INFO
 ```
 
 ---
