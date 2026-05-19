@@ -40,7 +40,22 @@ jobs:
       - name: Instalar dependências (fluxo Transcribe)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,transcribe]"
+          pip install -e ".[transcribe]"
+
+      - name: Verificar entrypoint Transcribe (sem OpenCV)
+        run: |
+          python -c "
+          import importlib.util
+          import sys
+          if 'cv2' in sys.modules:
+              del sys.modules['cv2']
+          spec = importlib.util.find_spec('cv2')
+          if spec is not None:
+              sys.modules['cv2'] = type(sys)('cv2')
+          import yolo_violence_pipeline.transcribe_cli as tc
+          assert 'yolo_violence_pipeline.pipeline' not in sys.modules
+          print('OK: transcribe_cli carregado sem pipeline/cv2')
+          "
 
       - name: Configurar credenciais AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -61,4 +76,4 @@ jobs:
           SKIP_EXISTING_OUTPUTS: ${{ inputs.skip_existing }}
           WORK_DIR: /tmp/transcribe-work
         run: |
-          yolo-transcribe --log-level INFO
+          python -m yolo_violence_pipeline.transcribe_cli --log-level INFO

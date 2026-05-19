@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Pipeline YOLOv8 pose e fluxo Amazon Transcribe + análise de risco."
@@ -41,15 +42,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "transcribe-analyze":
-        from yolo_violence_pipeline.transcribe_config import TranscribePipelineConfig
-        from yolo_violence_pipeline.transcribe_pipeline import run_transcribe_pipeline
+        # Delega ao CLI isolado (não importa pipeline.py / cv2 / ultralytics).
+        from yolo_violence_pipeline import transcribe_cli
 
-        cfg = TranscribePipelineConfig.from_environ()
-        result = run_transcribe_pipeline(cfg)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        if result.get("errors"):
-            return 1
-        return 0
+        return transcribe_cli.main(["--log-level", args.log_level])
 
     return 1
 
