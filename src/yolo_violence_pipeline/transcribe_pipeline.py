@@ -114,20 +114,51 @@ def _wait_transcription_job(transcribe_client, job_name: str, poll_seconds: int 
         time.sleep(poll_seconds)
 
 
-def _download_transcript_json(transcript_uri: str) -> dict[str, Any]:
-    parsed = urlparse(transcript_uri)
+def _parse_s3_location(uri: str) -> tuple[str, str] | None:
+    """Extrai bucket e key de URIs s3:// ou HTTPS do Amazon S3."""
+    parsed = urlparse(uri)
     if parsed.scheme == "s3":
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        s3 = boto3.client("s3")
-        local = Path("/tmp") / f"transcript-{uuid.uuid4().hex}.json"
-        download_file(s3, bucket, key, local)
-        return json.loads(local.read_text(encoding="utf-8"))
+        return parsed.netloc, parsed.path.lstrip("/")
 
-    import urllib.request
+    if parsed.scheme not in ("http", "https"):
+        return None
 
-    with urllib.request.urlopen(transcript_uri, timeout=120) as resp:  # noqa: S310
-        return json.loads(resp.read().decode("utf-8"))
+    host = (parsed.hostname or "").lower()
+    path = parsed.path.lstrip("/")
+    if not host or not path:
+        return None
+
+    # https://bucket.s3.us-east-1.amazonaws.com/key
+    if ".s3." in host and host.endswith(".amazonaws.com"):
+        bucket = host.split(".s3.", 1)[0]
+        return bucket, path
+
+    # https://s3.us-east-1.amazonaws.com/bucket/key
+    if host.startswith("s3.") and host.endswith(".amazonaws.com"):
+        bucket, _, key = path.partition("/")
+        if bucket and key:
+            return bucket, key
+
+    return None
+
+
+def _download_transcript_json(transcript_uri: str, s3_client_obj) -> dict[str, Any]:
+    """
+    Baixa o JSON de transcrição via API S3 (credenciais IAM).
+
+    URIs HTTPS retornadas pelo Transcribe apontam para objetos privados no bucket;
+    urllib sem assinatura retorna 403 Forbidden.
+    """
+    location = _parse_s3_location(transcript_uri)
+    if not location:
+        msg = f"URI de transcrição não suportada (esperado S3): {transcript_uri}"
+        raise ValueError(msg)
+
+    bucket, key = location
+    local = Path("/tmp") / f"transcript-{uuid.uuid4().hex}.json"
+    logger.info("Baixando transcrição s3://%s/%s", bucket, key)
+    download_file(s3_client_obj, bucket, key, local)
+    return json.loads(local.read_text(encoding="utf-8"))
 
 
 def transcribe_s3_object(
@@ -158,7 +189,7 @@ def transcribe_s3_object(
     )
 
     transcript_uri = _wait_transcription_job(transcribe_client, job_name)
-    payload = _download_transcript_json(transcript_uri)
+    payload = _download_transcript_json(transcript_uri, s3)
     return _extract_transcript_text(payload)
 
 

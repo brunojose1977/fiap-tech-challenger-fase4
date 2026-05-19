@@ -6,6 +6,7 @@ import pytest
 
 from yolo_violence_pipeline.transcribe_config import TranscribePipelineConfig
 from yolo_violence_pipeline.transcribe_pipeline import (
+    _parse_s3_location,
     _risk_pdf_key,
     _transcribed_text_key,
 )
@@ -34,6 +35,29 @@ def test_transcribe_from_environ_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = TranscribePipelineConfig.from_environ()
     assert cfg.openai_model == "gpt-5.4"
     assert cfg.transcribed_text_prefix == "transcribed-text-"
+
+
+def test_parse_s3_location_https_virtual_hosted() -> None:
+    uri = (
+        "https://transcribe-violence-output-fiap-posttech-iadevs-tcfase0.s3."
+        "us-east-1.amazonaws.com/_transcribe-jobs/job.json"
+    )
+    assert _parse_s3_location(uri) == (
+        "transcribe-violence-output-fiap-posttech-iadevs-tcfase0",
+        "_transcribe-jobs/job.json",
+    )
+
+
+def test_parse_s3_location_https_path_style() -> None:
+    uri = "https://s3.us-east-1.amazonaws.com/my-bucket/path/file.json"
+    assert _parse_s3_location(uri) == ("my-bucket", "path/file.json")
+
+
+def test_parse_s3_location_s3_scheme() -> None:
+    assert _parse_s3_location("s3://bucket-name/folder/out.json") == (
+        "bucket-name",
+        "folder/out.json",
+    )
 
 
 def test_output_key_prefixes() -> None:
