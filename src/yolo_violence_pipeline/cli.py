@@ -7,12 +7,6 @@ import json
 import logging
 import sys
 
-from yolo_violence_pipeline.config import PipelineConfig
-from yolo_violence_pipeline.pipeline import run_pipeline
-from yolo_violence_pipeline.transcribe_config import TranscribePipelineConfig
-from yolo_violence_pipeline.transcribe_pipeline import run_transcribe_pipeline
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Pipeline YOLOv8 pose e fluxo Amazon Transcribe + análise de risco."
@@ -38,12 +32,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.command == "process":
+        from yolo_violence_pipeline.config import PipelineConfig
+        from yolo_violence_pipeline.pipeline import run_pipeline
+
         cfg = PipelineConfig.from_environ()
         result = run_pipeline(cfg)
         print(json.dumps(result, indent=2))
         return 0
 
     if args.command == "transcribe-analyze":
+        from yolo_violence_pipeline.transcribe_config import TranscribePipelineConfig
+        from yolo_violence_pipeline.transcribe_pipeline import run_transcribe_pipeline
+
         cfg = TranscribePipelineConfig.from_environ()
         result = run_transcribe_pipeline(cfg)
         print(json.dumps(result, indent=2, ensure_ascii=False))
