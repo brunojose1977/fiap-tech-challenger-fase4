@@ -18,5 +18,6 @@ crash.log
 # Não versionar arquivos com credenciais de exemplo
 configuração_pastas.txt
 
-# Pasta local sem versionamento
-arquivos-que-nao-devem-ser-versionados/
+# Pasta local — nunca versionar (arquivos, subpastas e conteúdo sensível)
+/arquivos-que-nao-devem-ser-versionados/
+/arquivos-que-nao-devem-ser-versionados/**
